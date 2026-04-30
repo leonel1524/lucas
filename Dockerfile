@@ -5,7 +5,7 @@ FROM python:3.11-slim
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
-WORKDIR /transaciones
+WORKDIR /lucas
 
 # Saltamos el apt-get update a menos que sea estrictamente necesario
 # Instalamos las librerías de Python directamente
