@@ -1,3 +1,4 @@
+# docker build -t lucas:0.1.0 .
 # Usamos una imagen de Python que ya viene con lo necesario
 FROM python:3.11-slim
 
