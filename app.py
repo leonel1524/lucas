@@ -3,9 +3,8 @@ import pandas as pd
 import re
 import sqlite3
 from datetime import datetime
-from database import crear_base_de_datos
+
 # Configuración inicial
-crear_base_de_datos()
 st.set_page_config(page_title="Finanzas Lucas", page_icon="🇻🇪", layout="wide")
 
 # Función para conectar a la DB (Ruta absoluta para Docker)
@@ -20,15 +19,20 @@ def obtener_categorias():
     return df_cat
 
 # Guardar en la DB
-def guardar_movimientos_db(df, tasa, categoria_id):
+def guardar_movimientos_db(df, cat_map):
     conn = conectar_db()
     cursor = conn.cursor()
     exitos = 0
     duplicados = 0
     
     for _, row in df.iterrows():
+        # Ahora leemos los valores que tú editaste en la tabla
+        tasa_fila = row['Tasa']
+        cat_nombre = row['Categoría']
+        categoria_id = cat_map[cat_nombre] # Buscamos el ID por el nombre
+        
         monto_bs = row['Monto']
-        monto_usd = round(abs(monto_bs) / tasa, 2)
+        monto_usd = round(abs(monto_bs) / tasa_fila, 2)
         tipo = 'DEBITO' if monto_bs < 0 else 'CREDITO'
         
         try:
@@ -36,7 +40,7 @@ def guardar_movimientos_db(df, tasa, categoria_id):
                 INSERT INTO movimientos 
                 (fecha, referencia, descripcion, monto_original, moneda, tasa_cambio, monto_usd, tipo, categoria_id)
                 VALUES (?, ?, ?, ?, 'VES', ?, ?, ?, ?)
-            ''', (row['Fecha'], row['Referencia'], row['Descripción'], monto_bs, tasa, monto_usd, tipo, categoria_id))
+            ''', (row['Fecha'], row['Referencia'], row['Descripción'], monto_bs, tasa_fila, monto_usd, tipo, categoria_id))
             exitos += 1
         except sqlite3.IntegrityError:
             duplicados += 1
@@ -46,7 +50,7 @@ def guardar_movimientos_db(df, tasa, categoria_id):
     return exitos, duplicados
 
 # --- INTERFAZ ---
-st.title("Lucas 🏦 Control de Finanzas Personales Para todos")
+st.title("Lucas 🏦 Control de Finanzas Personales")
 
 # Sidebar para configuración global
 st.sidebar.header("Configuración del Día")
@@ -87,42 +91,57 @@ if st.button("🔍 Analizar Texto"):
             st.session_state['df_temp'] = pd.DataFrame(lista)
         else:
             st.error("No se detectó el formato.")
-
+# Obtener solo los nombres para el dropdown de la tabla
+categorias_nombres = df_cat['nombre'].tolist()
 # Si hay datos analizados, mostramos el editor
+# Dentro de tu app.py, después de procesar el texto con RegEx...
+
 if 'df_temp' in st.session_state:
-    st.subheader("📝 Edita las descripciones antes de guardar...")
-    st.info("Haz doble clic en la columna 'Descripción' para poner el nombre real del gasto (ej: 'Mercado Farmatodo').")
+    st.subheader("📝 Revisión de Movimientos")
     
-    # El data_editor permite modificar el DataFrame directamente
+    # Preparamos el DataFrame con las columnas adicionales
+    df_para_editar = st.session_state['df_temp'].copy()
+    
+    # Si no existen, añadimos las columnas con los valores por defecto del sidebar
+    if 'Tasa' not in df_para_editar.columns:
+        df_para_editar['Tasa'] = tasa_dia
+    if 'Categoría' not in df_para_editar.columns:
+        df_para_editar['Categoría'] = categoria_sel
+
+    # Configuración de la tabla interactiva
     df_editado = st.data_editor(
-        st.session_state['df_temp'],
+        df_para_editar,
         column_config={
             "Fecha": st.column_config.TextColumn(disabled=True),
             "Referencia": st.column_config.TextColumn(disabled=True),
-            "Monto": st.column_config.NumberColumn(disabled=True, format="%.2f Bs."),
-            "Descripción": st.column_config.TextColumn(help="Escribe qué compraste realmente", width="large")
+            "Monto": st.column_config.NumberColumn("Monto Bs.", disabled=True, format="%.2f"),
+            "Descripción": st.column_config.TextColumn("Descripción Real", width="medium"),
+            "Tasa": st.column_config.NumberColumn("Tasa Aplicada", min_value=1.0, format="%.2f"),
+            "Categoría": st.column_config.SelectboxColumn(
+                "Categoría",
+                help="Selecciona el tipo de gasto",
+                options=categorias_nombres,
+                required=True
+            )
         },
         hide_index=True,
-        use_container_width=True
+        use_container_width=True,
+        num_rows="dynamic"
     )
-    
-    # Botón para confirmar guardado usando los datos EDITADOS
-    if st.button(f"💾 Guardar Movimientos con Descripciones Reales."):
+
+    if st.button("💾 Confirmar y Guardar en Base de Datos"):
+        # Aquí llamarías a tu función de guardado usando df_editado
         id_cat = cat_opciones[categoria_sel]
-        # Pasamos df_editado en lugar de df_temp
-        ok, ups = guardar_movimientos_db(df_editado, tasa_dia, id_cat)
+        ok, ups = guardar_movimientos_db(df_editado, cat_opciones)
         
-        st.success(f"¡Listo! {ok} movimientos guardados.")
-        if ups > 0:
-            st.warning(f"{ups} ya existían.")
-        
+        st.success(f"Se guardaron {ok} movimientos con tus descripciones personalizadas.")
         del st.session_state['df_temp']
-        st.rerun() # Refrescamos para ver los cambios abajo
+        st.rerun()
 
 st.divider()
 st.subheader("Últimos movimientos registrados")
 conn = conectar_db()
 # Mostramos los últimos 10
-df_recientes = pd.read_sql_query("SELECT fecha, descripcion, monto_original as 'Bs', monto_usd as '$', tasa_cambio FROM movimientos ORDER BY id DESC LIMIT 10", conn)
+df_recientes = pd.read_sql_query("SELECT fecha, descripcion, monto_original as 'Bs', monto_usd as '$', tasa_cambio FROM movimientos ORDER BY id DESC LIMIT 20", conn)
 st.dataframe(df_recientes, use_container_width=True)
 conn.close()

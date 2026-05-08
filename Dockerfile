@@ -6,7 +6,7 @@ FROM python:3.11-slim
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
-WORKDIR /lucas
+WORKDIR /app
 
 # Saltamos el apt-get update a menos que sea estrictamente necesario
 # Instalamos las librerías de Python directamente
@@ -18,4 +18,4 @@ COPY . .
 
 EXPOSE 8501
 
-ENTRYPOINT ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+ENTRYPOINT ["streamlit", "run", "app.py", "--server.port=8501", "--server.fileWatcherType", "--server.address=0.0.0.0", "poll"]
